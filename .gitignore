@@ -1,0 +1,41 @@
+# Xcode
+DerivedData/
+build/
+*.xcuserstate
+*.xcuserdata/
+*.xcuserdatad/
+*.xcworkspace/xcuserdata/
+*.xcworkspace/xcshareddata/WorkspaceSettings.xcsettings
+*.xcworkspace/xcshareddata/WorkspaceSettings.xcsettings
+*.xcworkspace/xcshareddata/swiftpm/
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+Icon?
+
+# iOS Simulator
+*.simruntime
+*.simdevice
+
+# User-specific
+*.swiftdoc
+*.swiftsourceinfo
+*.xcuserstate
+*.moved-aside
+*.xcuserdatad
+*.xcscmblueprint
+
+# Logs
+*.log
+
+# Other
+*.zip
+*.tmp
+*.bak
+
+# GopherDash Go build
+*.exe
+*.out
+*.test 
