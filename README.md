@@ -1,4 +1,4 @@
-# SwiftDash 🐹⛷️
+# SwiftDash 🐦‍⬛
 
 A Swift port of the terminal game GopherDash, built with SpriteKit for macOS and iOS.
 
@@ -49,6 +49,42 @@ SwiftDash is an endless runner game where you control a hamster that runs right 
 3. **Build and run**:
    - Press `Cmd+R` or click the Run button
    - For iOS, you'll need a simulator or connected device
+
+### Command Line Build Scripts
+
+For quick building and testing without opening Xcode, you can use the included bash scripts:
+
+#### macOS Version
+```bash
+./build_and_run_mac.sh
+```
+This script will:
+- Build the macOS app using xcodebuild
+- Copy the built `.app` to `build/Debug/swiftdash.app` for easy access
+- Launch the app automatically
+
+#### iOS Version
+```bash
+./build_and_run_ios.sh
+```
+This script will:
+- Build the iOS app using xcodebuild
+- Copy the built `.app` to `build/Debug-iphonesimulator/swiftdash.app`
+- Install and launch the app in the iOS Simulator
+- Open the Simulator app for interaction
+
+#### Prerequisites for Scripts
+- Xcode command line tools must be set as active:
+  ```bash
+  sudo xcode-select --switch /Applications/Xcode.app/Contents/Developer
+  ```
+- For iOS: At least one iOS Simulator device must be available
+
+#### Benefits of Using Scripts
+- **Fast iteration**: No need to open Xcode for testing
+- **Easy sharing**: Built apps are in local `build/` directory
+- **Automated workflow**: One command to build and run
+- **CI/CD friendly**: Can be integrated into automated build processes
 
 ### Project Structure
 
