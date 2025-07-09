@@ -69,6 +69,8 @@ struct Obstacle {
 
 // MARK: - Game State
 enum GameState {
+    case mainMenu
+    case settings
     case playing
     case gameOver
     case cooldown
@@ -80,7 +82,7 @@ class GameScene: SKScene {
     private let layout = LayoutConfig()
     
     // MARK: - Game State
-    private var gameState: GameState = .playing
+    private var gameState: GameState = .mainMenu
     private var distance: Int = 0
     private var highScore: Int = 0
     private var lastUpdateTime: TimeInterval = 0
@@ -110,12 +112,31 @@ class GameScene: SKScene {
     private var restartLabel: SKLabelNode!
     private var cooldownLabel: SKLabelNode!
     
+    // MARK: - Menu UI Elements
+    private var titleLabel: SKLabelNode!
+    private var playButton: SKLabelNode!
+    private var settingsButton: SKLabelNode!
+    private var backButton: SKLabelNode!
+    private var gameMenuButton: SKLabelNode! // Back to menu button during game
+    private var gameMenuButtonBackground: SKSpriteNode! // Background for menu button
+    private var volumeLabel: SKLabelNode!
+    private var volumeSliderBackground: SKSpriteNode!
+    private var volumeSliderKnob: SKSpriteNode!
+    private var resetHighScoreButton: SKLabelNode!
+    private var confirmResetLabel: SKLabelNode!
+    private var confirmYesButton: SKLabelNode!
+    private var confirmNoButton: SKLabelNode!
+    
     // MARK: - Game World
     private var ground: SKSpriteNode!
     private var worldNode: SKNode!
     
     // MARK: - Cooldown
     private var cooldownEndTime: TimeInterval = 0
+    
+    // MARK: - Settings
+    private var volume: Float = 1.0 // 0.0 to 1.0
+    private var showingResetConfirmation: Bool = false
     
     // MARK: - Scene Setup
     class func newGameScene() -> GameScene {
@@ -129,7 +150,16 @@ class GameScene: SKScene {
     override func didMove(to view: SKView) {
         setupScene()
         loadHighScore()
-        startGame()
+        loadSettings()
+        
+        #if os(iOS)
+        // Add left edge swipe gesture for going back to menu
+        let leftEdgeGesture = UIScreenEdgePanGestureRecognizer(target: self, action: #selector(handleLeftEdgeSwipe(_:)))
+        leftEdgeGesture.edges = .left
+        view.addGestureRecognizer(leftEdgeGesture)
+        #endif
+        
+        showMainMenu()
     }
     
     private func setupScene() {
@@ -140,17 +170,8 @@ class GameScene: SKScene {
         worldNode = SKNode()
         addChild(worldNode)
         
-        // Setup ground
-        setupGround()
-        
-        // Setup player
-        setupPlayer()
-        
-        // Setup UI
+        // Setup UI (includes both game and menu elements)
         setupUI()
-        
-        // Setup initial obstacles
-        seedInitialObstacles()
     }
     
     private func getSafeMargins() -> (top: CGFloat, bottom: CGFloat, side: CGFloat) {
@@ -299,6 +320,161 @@ class GameScene: SKScene {
         cooldownLabel.isHidden = true
         addChild(cooldownLabel)
         
+        // MARK: - Menu UI Setup
+        
+        // Title label
+        titleLabel = SKLabelNode(fontNamed: "Arial-Bold")
+        titleLabel.fontSize = currentLayout.fontSize * 0.12
+        titleLabel.fontColor = .white
+        titleLabel.text = "SwiftDash"
+        titleLabel.horizontalAlignmentMode = .center
+        titleLabel.verticalAlignmentMode = .center
+        titleLabel.position = CGPoint(x: size.width * 0.5, y: size.height * 0.7)
+        titleLabel.zPosition = 100
+        addChild(titleLabel)
+        
+        // Play button
+        playButton = SKLabelNode(fontNamed: "Arial-Bold")
+        playButton.fontSize = currentLayout.fontSize * 0.06
+        playButton.fontColor = .green
+        playButton.text = "PLAY"
+        playButton.horizontalAlignmentMode = .center
+        playButton.verticalAlignmentMode = .center
+        playButton.position = CGPoint(x: size.width * 0.5, y: size.height * 0.5)
+        playButton.zPosition = 100
+        playButton.name = "playButton"
+        addChild(playButton)
+        
+        // Settings button
+        settingsButton = SKLabelNode(fontNamed: "Arial-Bold")
+        settingsButton.fontSize = currentLayout.fontSize * 0.05
+        settingsButton.fontColor = .cyan
+        settingsButton.text = "SETTINGS"
+        settingsButton.horizontalAlignmentMode = .center
+        settingsButton.verticalAlignmentMode = .center
+        settingsButton.position = CGPoint(x: size.width * 0.5, y: size.height * 0.35)
+        settingsButton.zPosition = 100
+        settingsButton.name = "settingsButton"
+        addChild(settingsButton)
+        
+        // Back button
+        backButton = SKLabelNode(fontNamed: "Arial-Bold")
+        backButton.fontSize = currentLayout.fontSize * 0.05
+        backButton.fontColor = .white
+        backButton.text = "BACK"
+        backButton.horizontalAlignmentMode = .center
+        backButton.verticalAlignmentMode = .center
+        backButton.position = CGPoint(x: size.width * 0.5, y: size.height * 0.25) // Higher position for better visibility
+        backButton.zPosition = 100
+        backButton.name = "backButton"
+        backButton.isHidden = true
+        addChild(backButton)
+        
+        // Game menu button (for returning to menu during gameplay)
+        gameMenuButton = SKLabelNode(fontNamed: "Arial-Bold")
+        gameMenuButton.fontSize = currentLayout.fontSize * layout.distanceFontSize // Same size as distance label
+        gameMenuButton.fontColor = .white
+        gameMenuButton.text = "Menu"
+        gameMenuButton.horizontalAlignmentMode = .right
+        gameMenuButton.verticalAlignmentMode = .top
+        // Position to the left of the distance label at same height
+        let menuButtonX = size.width * layout.distanceLabelPosition.x + margins.side - 20 // 20px to the left of score
+        let menuButtonY = size.height * layout.distanceLabelPosition.y - margins.top
+        gameMenuButton.position = CGPoint(x: menuButtonX, y: menuButtonY)
+        gameMenuButton.zPosition = 100
+        gameMenuButton.name = "gameMenuButton"
+        gameMenuButton.isHidden = true
+        addChild(gameMenuButton)
+        
+        // Add subtle background for menu button
+        gameMenuButtonBackground = SKSpriteNode(color: .black, size: CGSize(width: 60, height: 25))
+        gameMenuButtonBackground.alpha = 0.3
+        gameMenuButtonBackground.position = CGPoint(x: menuButtonX - 30, y: menuButtonY - 12)
+        gameMenuButtonBackground.zPosition = 99
+        gameMenuButtonBackground.name = "gameMenuButtonBackground"
+        gameMenuButtonBackground.isHidden = true
+        addChild(gameMenuButtonBackground)
+        
+        // Volume label
+        volumeLabel = SKLabelNode(fontNamed: "Arial-Bold")
+        volumeLabel.fontSize = currentLayout.fontSize * 0.04
+        volumeLabel.fontColor = .white
+        volumeLabel.text = "Volume: \(Int(volume * 100))%"
+        volumeLabel.horizontalAlignmentMode = .center
+        volumeLabel.verticalAlignmentMode = .center
+        volumeLabel.position = CGPoint(x: size.width * 0.5, y: size.height * 0.6) // Moved down from 0.65 to 0.6
+        volumeLabel.zPosition = 100
+        volumeLabel.isHidden = true
+        addChild(volumeLabel)
+        
+        // Volume slider background
+        volumeSliderBackground = SKSpriteNode(color: .gray, size: CGSize(width: 200, height: 10))
+        volumeSliderBackground.position = CGPoint(x: size.width * 0.5, y: size.height * 0.5) // Moved down from 0.55 to 0.5
+        volumeSliderBackground.zPosition = 100
+        volumeSliderBackground.name = "volumeSlider"
+        volumeSliderBackground.isHidden = true
+        addChild(volumeSliderBackground)
+        
+        // Volume slider knob
+        volumeSliderKnob = SKSpriteNode(color: .white, size: CGSize(width: 20, height: 20))
+        volumeSliderKnob.position = CGPoint(
+            x: volumeSliderBackground.position.x - 90 + CGFloat(volume) * 180,
+            y: volumeSliderBackground.position.y
+        )
+        volumeSliderKnob.zPosition = 101
+        volumeSliderKnob.name = "volumeKnob"
+        volumeSliderKnob.isHidden = true
+        addChild(volumeSliderKnob)
+        
+        // Reset high score button
+        resetHighScoreButton = SKLabelNode(fontNamed: "Arial-Bold")
+        resetHighScoreButton.fontSize = currentLayout.fontSize * 0.04
+        resetHighScoreButton.fontColor = .red
+        resetHighScoreButton.text = "Reset High Score"
+        resetHighScoreButton.horizontalAlignmentMode = .center
+        resetHighScoreButton.verticalAlignmentMode = .center
+        resetHighScoreButton.position = CGPoint(x: size.width * 0.5, y: size.height * 0.4)
+        resetHighScoreButton.zPosition = 100
+        resetHighScoreButton.name = "resetHighScoreButton"
+        resetHighScoreButton.isHidden = true
+        addChild(resetHighScoreButton)
+        
+        // Confirmation popup elements
+        confirmResetLabel = SKLabelNode(fontNamed: "Arial-Bold")
+        confirmResetLabel.fontSize = currentLayout.fontSize * 0.04
+        confirmResetLabel.fontColor = .white
+        confirmResetLabel.text = "Reset high score? This cannot be undone!"
+        confirmResetLabel.horizontalAlignmentMode = .center
+        confirmResetLabel.verticalAlignmentMode = .center
+        confirmResetLabel.position = CGPoint(x: size.width * 0.5, y: size.height * 0.55)
+        confirmResetLabel.zPosition = 110
+        confirmResetLabel.isHidden = true
+        addChild(confirmResetLabel)
+        
+        confirmYesButton = SKLabelNode(fontNamed: "Arial-Bold")
+        confirmYesButton.fontSize = currentLayout.fontSize * 0.05
+        confirmYesButton.fontColor = .red
+        confirmYesButton.text = "YES"
+        confirmYesButton.horizontalAlignmentMode = .center
+        confirmYesButton.verticalAlignmentMode = .center
+        confirmYesButton.position = CGPoint(x: size.width * 0.4, y: size.height * 0.4)
+        confirmYesButton.zPosition = 110
+        confirmYesButton.name = "confirmYes"
+        confirmYesButton.isHidden = true
+        addChild(confirmYesButton)
+        
+        confirmNoButton = SKLabelNode(fontNamed: "Arial-Bold")
+        confirmNoButton.fontSize = currentLayout.fontSize * 0.05
+        confirmNoButton.fontColor = .green
+        confirmNoButton.text = "NO"
+        confirmNoButton.horizontalAlignmentMode = .center
+        confirmNoButton.verticalAlignmentMode = .center
+        confirmNoButton.position = CGPoint(x: size.width * 0.6, y: size.height * 0.4)
+        confirmNoButton.zPosition = 110
+        confirmNoButton.name = "confirmNo"
+        confirmNoButton.isHidden = true
+        addChild(confirmNoButton)
+        
         updateUI()
     }
     
@@ -385,6 +561,20 @@ class GameScene: SKScene {
                 y: size.height * layout.cooldownLabelPosition.y
             )
         }
+        
+        // Update game menu button
+        if let button = gameMenuButton {
+            button.fontSize = currentLayout.fontSize * layout.distanceFontSize
+            // Position to the left of the distance label at same height
+            let menuButtonX = size.width * layout.distanceLabelPosition.x + margins.side - 20 // 20px to the left of score
+            let menuButtonY = size.height * layout.distanceLabelPosition.y - margins.top
+            button.position = CGPoint(x: menuButtonX, y: menuButtonY)
+            
+            // Update background position
+            if let background = gameMenuButtonBackground {
+                background.position = CGPoint(x: menuButtonX - 30, y: menuButtonY - 12)
+            }
+        }
     }
     
     private func updateObstaclePositions() {
@@ -399,16 +589,177 @@ class GameScene: SKScene {
         }
     }
     
+    // MARK: - Menu System
+    private func showMainMenu() {
+        gameState = .mainMenu
+        hideAllMenuElements()
+        
+        titleLabel.isHidden = false
+        playButton.isHidden = false
+        settingsButton.isHidden = false
+        
+        // Hide game elements
+        hideGameElements()
+        
+        // Clean up obstacles when returning to menu
+        cleanupGameWorld()
+    }
+    
+    private func showSettings() {
+        gameState = .settings
+        hideAllMenuElements()
+        
+        titleLabel.isHidden = false
+        volumeLabel.isHidden = false
+        volumeSliderBackground.isHidden = false
+        volumeSliderKnob.isHidden = false
+        resetHighScoreButton.isHidden = false
+        backButton.isHidden = false
+        
+        updateVolumeDisplay()
+    }
+    
+    private func hideAllMenuElements() {
+        titleLabel.isHidden = true
+        playButton.isHidden = true
+        settingsButton.isHidden = true
+        backButton.isHidden = true
+        gameMenuButton.isHidden = true
+        gameMenuButtonBackground.isHidden = true
+        volumeLabel.isHidden = true
+        volumeSliderBackground.isHidden = true
+        volumeSliderKnob.isHidden = true
+        resetHighScoreButton.isHidden = true
+        confirmResetLabel.isHidden = true
+        confirmYesButton.isHidden = true
+        confirmNoButton.isHidden = true
+        showingResetConfirmation = false
+    }
+    
+    private func hideGameElements() {
+        distanceLabel.isHidden = true
+        highScoreLabel.isHidden = true
+        gameOverLabel.isHidden = true
+        restartLabel.isHidden = true
+        cooldownLabel.isHidden = true
+        
+        // Hide game world
+        if let ground = ground {
+            ground.isHidden = true
+        }
+        if let player = player {
+            player.isHidden = true
+        }
+        worldNode.isHidden = true
+    }
+    
+    private func showGameElements() {
+        distanceLabel.isHidden = false
+        highScoreLabel.isHidden = false
+        gameMenuButton.isHidden = false
+        gameMenuButtonBackground.isHidden = false
+        
+        // Show game world
+        if let ground = ground {
+            ground.isHidden = false
+        }
+        if let player = player {
+            player.isHidden = false
+        }
+        worldNode.isHidden = false
+    }
+    
+    private func updateVolumeDisplay() {
+        volumeLabel.text = "Volume: \(Int(volume * 100))%"
+        volumeSliderKnob.position.x = volumeSliderBackground.position.x - 90 + CGFloat(volume) * 180
+    }
+    
+    private func showResetConfirmation() {
+        showingResetConfirmation = true
+        confirmResetLabel.isHidden = false
+        confirmYesButton.isHidden = false
+        confirmNoButton.isHidden = false
+        
+        // Hide other settings elements temporarily
+        volumeLabel.isHidden = true
+        volumeSliderBackground.isHidden = true
+        volumeSliderKnob.isHidden = true
+        resetHighScoreButton.isHidden = true
+    }
+    
+    private func hideResetConfirmation() {
+        showingResetConfirmation = false
+        confirmResetLabel.isHidden = true
+        confirmYesButton.isHidden = true
+        confirmNoButton.isHidden = true
+        
+        // Show settings elements again
+        volumeLabel.isHidden = false
+        volumeSliderBackground.isHidden = false
+        volumeSliderKnob.isHidden = false
+        resetHighScoreButton.isHidden = false
+    }
+    
+    private func cleanupGameWorld() {
+        // Remove all obstacles and their visual nodes
+        obstacles.removeAll()
+        obstacleNodes.forEach { $0.removeFromParent() }
+        obstacleNodes.removeAll()
+        
+        // Remove ground and player if they exist
+        if let ground = ground {
+            ground.removeFromParent()
+            self.ground = nil
+        }
+        if let player = player {
+            player.removeFromParent()
+            self.player = nil
+        }
+    }
+    
+    // MARK: - Settings Management
+    private func loadSettings() {
+        let documentsPath = NSSearchPathForDirectoriesInDomains(.documentDirectory, .userDomainMask, true)[0]
+        let settingsPath = (documentsPath as NSString).appendingPathComponent(".swiftdash_settings")
+        
+        do {
+            let settingsString = try String(contentsOfFile: settingsPath, encoding: .utf8)
+            if let volumeValue = Float(settingsString.trimmingCharacters(in: .whitespacesAndNewlines)) {
+                volume = max(0.0, min(1.0, volumeValue))
+            }
+        } catch {
+            volume = 1.0 // Default volume
+        }
+    }
+    
+    private func saveSettings() {
+        let documentsPath = NSSearchPathForDirectoriesInDomains(.documentDirectory, .userDomainMask, true)[0]
+        let settingsPath = (documentsPath as NSString).appendingPathComponent(".swiftdash_settings")
+        
+        do {
+            try String(volume).write(toFile: settingsPath, atomically: true, encoding: .utf8)
+        } catch {
+            print("Failed to save settings: \(error)")
+        }
+    }
+    
     // MARK: - Game Logic
     private func startGame() {
         gameState = .playing
         distance = 0
         speedMultiplier = 1.0 // Reset speed multiplier
         playerVelocityY = 0
+        
+        // Clean up any existing game world first
+        cleanupGameWorld()
+        
+        // Setup game world fresh each time
+        setupGround()
+        setupPlayer()
+        
+        // Reset player position
         playerY = currentLayout.playerGroundY
-        if let player = player {
-            player.position = CGPoint(x: currentLayout.playerX, y: playerY)
-        }
+        player.position = CGPoint(x: currentLayout.playerX, y: playerY)
         
         // Clear obstacles
         obstacles.removeAll()
@@ -417,6 +768,10 @@ class GameScene: SKScene {
         
         // Seed initial obstacles
         seedInitialObstacles()
+        
+        // Show game elements and hide menu
+        hideAllMenuElements()
+        showGameElements()
         
         // Hide game over UI
         gameOverLabel.isHidden = true
@@ -658,6 +1013,9 @@ class GameScene: SKScene {
     // MARK: - Input Handling
     private func handleJump() {
         switch gameState {
+        case .mainMenu, .settings:
+            // In menu states, do nothing - handle with touch/click events
+            break
         case .playing:
             // Only jump if on ground
             if playerY <= currentLayout.playerGroundY + 20 {
@@ -670,6 +1028,75 @@ class GameScene: SKScene {
             // Do nothing during cooldown
             break
         }
+    }
+    
+    private func handleMenuTouch(at location: CGPoint) {
+        // Check which UI element was touched
+        let touchedNodes = nodes(at: location)
+        
+        for node in touchedNodes {
+            guard let nodeName = node.name else { continue }
+            
+            // Visual feedback - briefly change color
+            if let labelNode = node as? SKLabelNode {
+                let originalColor = labelNode.fontColor
+                labelNode.fontColor = .yellow
+                labelNode.run(SKAction.sequence([
+                    SKAction.wait(forDuration: 0.1),
+                    SKAction.run { labelNode.fontColor = originalColor }
+                ]))
+            }
+            
+            switch nodeName {
+            case "playButton":
+                if gameState == .mainMenu {
+                    startGame()
+                }
+            case "settingsButton":
+                if gameState == .mainMenu {
+                    showSettings()
+                }
+            case "backButton":
+                if gameState == .settings && !showingResetConfirmation {
+                    showMainMenu()
+                }
+            case "gameMenuButton", "gameMenuButtonBackground":
+                if gameState == .playing || gameState == .gameOver || gameState == .cooldown {
+                    showMainMenu()
+                }
+            case "resetHighScoreButton":
+                if gameState == .settings && !showingResetConfirmation {
+                    showResetConfirmation()
+                }
+            case "confirmYes":
+                if showingResetConfirmation {
+                    highScore = 0
+                    saveHighScore()
+                    hideResetConfirmation()
+                }
+            case "confirmNo":
+                if showingResetConfirmation {
+                    hideResetConfirmation()
+                }
+            case "volumeSlider", "volumeKnob":
+                if gameState == .settings && !showingResetConfirmation {
+                    handleVolumeChange(at: location)
+                }
+            default:
+                break
+            }
+        }
+    }
+    
+    private func handleVolumeChange(at location: CGPoint) {
+        // Calculate new volume based on touch position
+        let sliderLeft = volumeSliderBackground.position.x - 90
+        let sliderRight = volumeSliderBackground.position.x + 90
+        let touchX = max(sliderLeft, min(sliderRight, location.x))
+        
+        volume = Float((touchX - sliderLeft) / (sliderRight - sliderLeft))
+        updateVolumeDisplay()
+        saveSettings()
     }
     
     // MARK: - Game Loop
@@ -693,8 +1120,54 @@ class GameScene: SKScene {
 // MARK: - Touch/Mouse Handling
 #if os(iOS) || os(tvOS)
 extension GameScene {
+    
+    @objc private func handleLeftEdgeSwipe(_ gesture: UIScreenEdgePanGestureRecognizer) {
+        // Only handle completed swipes
+        guard gesture.state == .ended else { return }
+        
+        // Only allow back gesture during gameplay, game over, or cooldown states
+        if gameState == .playing || gameState == .gameOver || gameState == .cooldown {
+            showMainMenu()
+        } else if gameState == .settings && !showingResetConfirmation {
+            showMainMenu()
+        } else if gameState == .settings && showingResetConfirmation {
+            hideResetConfirmation()
+        }
+    }
     override func touchesBegan(_ touches: Set<UITouch>, with event: UIEvent?) {
-        handleJump()
+        guard let touch = touches.first else { return }
+        let location = touch.location(in: self)
+        
+        // Handle menu interactions
+        if gameState == .mainMenu || gameState == .settings {
+            handleMenuTouch(at: location)
+            
+            // iOS workaround: Double-tap anywhere in settings to go back
+            #if os(iOS)
+            if gameState == .settings && !showingResetConfirmation && touch.tapCount == 2 {
+                showMainMenu()
+                return
+            }
+            #endif
+        } else if gameState == .playing || gameState == .gameOver || gameState == .cooldown {
+            // Check if touching the menu button
+            let touchedNodes = nodes(at: location)
+            var menuButtonTouched = false
+            for node in touchedNodes {
+                if node.name == "gameMenuButton" || node.name == "gameMenuButtonBackground" {
+                    handleMenuTouch(at: location)
+                    menuButtonTouched = true
+                    break
+                }
+            }
+            
+            // If not touching menu button, handle jump
+            if !menuButtonTouched {
+                handleJump()
+            }
+        } else {
+            handleJump()
+        }
     }
 }
 #endif
@@ -702,6 +1175,19 @@ extension GameScene {
 #if os(OSX)
 extension GameScene {
     override func keyDown(with event: NSEvent) {
+        // Handle menu navigation with keyboard
+        if gameState == .settings && event.keyCode == 53 { // Escape key
+            if showingResetConfirmation {
+                hideResetConfirmation()
+            } else {
+                showMainMenu()
+            }
+            return
+        } else if gameState == .mainMenu && event.keyCode == 53 { // Escape key
+            NSApplication.shared.terminate(nil)
+            return
+        }
+        
         switch event.keyCode {
         case 49: // Space
             handleJump()
@@ -715,7 +1201,30 @@ extension GameScene {
     }
     
     override func mouseDown(with event: NSEvent) {
-        handleJump()
+        let location = event.location(in: self)
+        
+        // Handle menu interactions
+        if gameState == .mainMenu || gameState == .settings {
+            handleMenuTouch(at: location)
+        } else if gameState == .playing || gameState == .gameOver || gameState == .cooldown {
+            // Check if clicking the menu button
+            let touchedNodes = nodes(at: location)
+            var menuButtonTouched = false
+            for node in touchedNodes {
+                if node.name == "gameMenuButton" || node.name == "gameMenuButtonBackground" {
+                    handleMenuTouch(at: location)
+                    menuButtonTouched = true
+                    break
+                }
+            }
+            
+            // If not clicking menu button, handle jump
+            if !menuButtonTouched {
+                handleJump()
+            }
+        } else {
+            handleJump()
+        }
     }
 }
 #endif

@@ -69,12 +69,17 @@ xcrun simctl launch "$DEVICE_ID" kfurman.swiftdash
 echo "Opening iOS Simulator..."
 open -a Simulator
 
+# Give user instructions to manually rotate since simctl doesn't support rotation
+echo "Please manually rotate the simulator to landscape orientation:"
+echo "- Device → Rotate Left/Right from the Simulator menu"
+echo "- The game is optimized for landscape mode"
+sleep 1
+
 echo "iOS version launched successfully!"
-echo "The app should now be running in the iOS Simulator."
+echo "The app should now be running in the iOS Simulator in landscape mode."
 echo "You can interact with it using your mouse and keyboard."
 echo ""
 echo "Controls:"
 echo "- Tap the screen to jump"
-echo "- The game should automatically start"
-echo ""
-echo "To quit the simulator, close the Simulator app or press Cmd+Q" 
+echo "- Tap the 'Menu' button in the top-left during gameplay to return to main menu"
+echo "- Swipe from the left edge of the screen to go back (iOS back gesture)"
