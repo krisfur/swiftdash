@@ -10,18 +10,50 @@ import Foundation
 
 // MARK: - Game Constants
 struct GameConstants {
-    static let initialFrameRate: TimeInterval = 0.015 // Faster start (~40 FPS)
-    static let minFrameRate: TimeInterval = 0.0167 // Cap at ~60 FPS
-    static let accelerationFactor: Double = 0.9995 // More gradual speedup
+    static let targetFrameRate: TimeInterval = 1.0/60.0 // 60 FPS
     static let speedMultiplierIncrease: Double = 1.001 // Increase movement speed over time
     static let cooldownSeconds: TimeInterval = 2.0
     static let gravity: CGFloat = -1.0 // Gravity pulls down
     static let jumpVelocity: CGFloat = 16.0 // Higher jump
     static let minGapCells: Int = 150 // Much larger minimum gap for fairness
-    static let initialSafeTiles: Int = 25
     static let obstacleSpawnProbability: Double = 0.12
     static let rockProbability: Double = 0.5
     static let baseObstacleSpeed: CGFloat = 5.0 // Base movement speed
+}
+
+// MARK: - Layout Configuration
+struct LayoutConfig {
+    let playerXPercent: CGFloat = 0.15 // 15% from left edge
+    let groundHeightPercent: CGFloat = 0.15 // 15% from bottom
+    let minGroundHeight: CGFloat = 60 // Minimum ground height
+    let maxGroundHeight: CGFloat = 150 // Maximum ground height
+    let playerSize: CGSize = CGSize(width: 30, height: 30)
+    let groundThickness: CGFloat = 20
+    
+    // UI positioning
+    let distanceLabelPosition: CGPoint = CGPoint(x: 0.1, y: 0.9) // Screen percentage
+    let highScoreLabelPosition: CGPoint = CGPoint(x: 0.1, y: 0.85)
+    let gameOverLabelPosition: CGPoint = CGPoint(x: 0.5, y: 0.6)
+    let restartLabelPosition: CGPoint = CGPoint(x: 0.5, y: 0.45)
+    let cooldownLabelPosition: CGPoint = CGPoint(x: 0.5, y: 0.35)
+    
+    // Font size as percentage of smaller screen dimension
+    let distanceFontSize: CGFloat = 0.04
+    let highScoreFontSize: CGFloat = 0.03
+    let gameOverFontSize: CGFloat = 0.08
+    let restartFontSize: CGFloat = 0.04
+    let cooldownFontSize: CGFloat = 0.035
+    
+    // Safe margins - adaptive for iOS vs macOS
+    #if os(iOS)
+    let topMargin: CGFloat = 60 // More space for iOS status bar/notch
+    let bottomMargin: CGFloat = 40 // More space for iOS home indicator
+    let sideMargin: CGFloat = 20
+    #else
+    let topMargin: CGFloat = 20
+    let bottomMargin: CGFloat = 20  
+    let sideMargin: CGFloat = 20
+    #endif
 }
 
 // MARK: - Game Objects
@@ -44,11 +76,13 @@ enum GameState {
 
 class GameScene: SKScene {
     
+    // MARK: - Layout
+    private let layout = LayoutConfig()
+    
     // MARK: - Game State
     private var gameState: GameState = .playing
     private var distance: Int = 0
     private var highScore: Int = 0
-    private var frameDuration: TimeInterval = GameConstants.initialFrameRate
     private var lastUpdateTime: TimeInterval = 0
     private var speedMultiplier: Double = 1.0 // Tracks current game speed
     
@@ -56,7 +90,14 @@ class GameScene: SKScene {
     private var player: SKSpriteNode!
     private var playerVelocityY: CGFloat = 0
     private var playerY: CGFloat = 0
-    private var groundY: CGFloat = 50 // Will be calculated based on screen size
+    
+    // MARK: - Calculated Layout Values
+    private var currentLayout: (
+        groundY: CGFloat,
+        playerX: CGFloat,
+        playerGroundY: CGFloat,
+        fontSize: CGFloat
+    ) = (0, 0, 0, 0)
     
     // MARK: - Obstacles
     private var obstacles: [Obstacle] = []
@@ -92,8 +133,8 @@ class GameScene: SKScene {
     }
     
     private func setupScene() {
-        // Calculate ground position based on screen size
-        groundY = size.height * 0.15 // 15% from bottom of screen
+        // Calculate initial layout
+        updateLayout()
         
         // Setup world container
         worldNode = SKNode()
@@ -112,17 +153,63 @@ class GameScene: SKScene {
         seedInitialObstacles()
     }
     
+    private func getSafeMargins() -> (top: CGFloat, bottom: CGFloat, side: CGFloat) {
+        var topMargin = layout.topMargin
+        var bottomMargin = layout.bottomMargin
+        var sideMargin = layout.sideMargin
+        
+        #if os(iOS)
+        // Use actual safe area if available
+        if let view = self.view {
+            if #available(iOS 11.0, *) {
+                topMargin = max(topMargin, view.safeAreaInsets.top)
+                bottomMargin = max(bottomMargin, view.safeAreaInsets.bottom)
+                sideMargin = max(sideMargin, max(view.safeAreaInsets.left, view.safeAreaInsets.right))
+            }
+        }
+        #endif
+        
+        return (top: topMargin, bottom: bottomMargin, side: sideMargin)
+    }
+    
+    private func updateLayout() {
+        // Calculate safe screen dimensions with platform-specific safe areas
+        let margins = getSafeMargins()
+        let safeWidth = max(size.width - margins.side * 2, 200)
+        let safeHeight = max(size.height - margins.top - margins.bottom, 200)
+        
+        // Calculate ground position with constraints
+        let groundHeightFromBottom = size.height * layout.groundHeightPercent
+        let constrainedGroundHeight = max(layout.minGroundHeight, 
+                                        min(layout.maxGroundHeight, groundHeightFromBottom))
+        let groundY = margins.bottom + constrainedGroundHeight
+        
+        // Calculate player position (slightly into ground so it can collide with holes)
+        let playerX = margins.side + safeWidth * layout.playerXPercent
+        let playerGroundY = groundY + layout.groundThickness / 2 + layout.playerSize.height / 2 - 8
+        
+        // Calculate responsive font size
+        let baseFontSize = min(safeWidth, safeHeight)
+        
+        currentLayout = (
+            groundY: groundY,
+            playerX: playerX, 
+            playerGroundY: playerGroundY,
+            fontSize: baseFontSize
+        )
+    }
+    
     private func setupGround() {
-        ground = SKSpriteNode(color: .brown, size: CGSize(width: size.width * 2, height: 20))
-        ground.position = CGPoint(x: size.width / 2, y: groundY)
+        ground = SKSpriteNode(color: .brown, size: CGSize(width: size.width * 2, height: layout.groundThickness))
+        ground.position = CGPoint(x: size.width / 2, y: currentLayout.groundY)
         ground.zPosition = 1
         addChild(ground)
     }
     
     private func setupPlayer() {
         // Create a simple hamster sprite (placeholder)
-        player = SKSpriteNode(color: .orange, size: CGSize(width: 30, height: 30))
-        player.position = CGPoint(x: 100, y: groundY + 15) // Align with ground
+        player = SKSpriteNode(color: .orange, size: layout.playerSize)
+        player.position = CGPoint(x: currentLayout.playerX, y: currentLayout.playerGroundY)
         player.zPosition = 10
         addChild(player)
         
@@ -139,47 +226,75 @@ class GameScene: SKScene {
     }
     
     private func setupUI() {
+        // Get current safe margins
+        let margins = getSafeMargins()
+        
         // Distance label
         distanceLabel = SKLabelNode(fontNamed: "Arial-Bold")
-        distanceLabel.fontSize = 24
+        distanceLabel.fontSize = currentLayout.fontSize * layout.distanceFontSize
         distanceLabel.fontColor = .white
-        distanceLabel.position = CGPoint(x: 100, y: size.height - 50)
+        distanceLabel.horizontalAlignmentMode = .left
+        distanceLabel.verticalAlignmentMode = .top
+        distanceLabel.position = CGPoint(
+            x: size.width * layout.distanceLabelPosition.x + margins.side,
+            y: size.height * layout.distanceLabelPosition.y - margins.top
+        )
         distanceLabel.zPosition = 100
         addChild(distanceLabel)
         
         // High score label
         highScoreLabel = SKLabelNode(fontNamed: "Arial")
-        highScoreLabel.fontSize = 18
+        highScoreLabel.fontSize = currentLayout.fontSize * layout.highScoreFontSize
         highScoreLabel.fontColor = .yellow
-        highScoreLabel.position = CGPoint(x: 100, y: size.height - 80)
+        highScoreLabel.horizontalAlignmentMode = .left
+        highScoreLabel.verticalAlignmentMode = .top
+        highScoreLabel.position = CGPoint(
+            x: size.width * layout.highScoreLabelPosition.x + margins.side,
+            y: size.height * layout.highScoreLabelPosition.y - margins.top
+        )
         highScoreLabel.zPosition = 100
         addChild(highScoreLabel)
         
         // Game over label
         gameOverLabel = SKLabelNode(fontNamed: "Arial-Bold")
-        gameOverLabel.fontSize = 48
+        gameOverLabel.fontSize = currentLayout.fontSize * layout.gameOverFontSize
         gameOverLabel.fontColor = .red
         gameOverLabel.text = "GAME OVER"
-        gameOverLabel.position = CGPoint(x: size.width / 2, y: size.height / 2 + 50)
+        gameOverLabel.horizontalAlignmentMode = .center
+        gameOverLabel.verticalAlignmentMode = .center
+        gameOverLabel.position = CGPoint(
+            x: size.width * layout.gameOverLabelPosition.x,
+            y: size.height * layout.gameOverLabelPosition.y
+        )
         gameOverLabel.zPosition = 100
         gameOverLabel.isHidden = true
         addChild(gameOverLabel)
         
         // Restart label
         restartLabel = SKLabelNode(fontNamed: "Arial")
-        restartLabel.fontSize = 24
+        restartLabel.fontSize = currentLayout.fontSize * layout.restartFontSize
         restartLabel.fontColor = .white
         restartLabel.text = "Jump to restart"
-        restartLabel.position = CGPoint(x: size.width / 2, y: size.height / 2 - 20)
+        restartLabel.horizontalAlignmentMode = .center
+        restartLabel.verticalAlignmentMode = .center
+        restartLabel.position = CGPoint(
+            x: size.width * layout.restartLabelPosition.x,
+            y: size.height * layout.restartLabelPosition.y
+        )
         restartLabel.zPosition = 100
         restartLabel.isHidden = true
         addChild(restartLabel)
         
         // Cooldown label
         cooldownLabel = SKLabelNode(fontNamed: "Arial")
-        cooldownLabel.fontSize = 20
+        cooldownLabel.fontSize = currentLayout.fontSize * layout.cooldownFontSize
         cooldownLabel.fontColor = .orange
-        cooldownLabel.position = CGPoint(x: size.width / 2, y: size.height / 2 - 50)
+        cooldownLabel.horizontalAlignmentMode = .center
+        cooldownLabel.verticalAlignmentMode = .center
+        cooldownLabel.position = CGPoint(
+            x: size.width * layout.cooldownLabelPosition.x,
+            y: size.height * layout.cooldownLabelPosition.y
+        )
         cooldownLabel.zPosition = 100
         cooldownLabel.isHidden = true
         addChild(cooldownLabel)
@@ -191,36 +306,96 @@ class GameScene: SKScene {
     override func didChangeSize(_ oldSize: CGSize) {
         super.didChangeSize(oldSize)
         
-        // Recalculate ground position based on new screen size
-        groundY = size.height * 0.15 // 15% from bottom of screen
+        // Recalculate layout for new screen size
+        updateLayout()
         
-        // Update ground position and size (only if ground exists)
+        // Update ground
         if let ground = ground {
-            ground.size = CGSize(width: size.width * 2, height: 20)
-            ground.position = CGPoint(x: size.width / 2, y: groundY)
+            ground.size = CGSize(width: size.width * 2, height: layout.groundThickness)
+            ground.position = CGPoint(x: size.width / 2, y: currentLayout.groundY)
         }
         
-        // Update player position to stay on ground (only if player exists)
+        // Update player position (preserve relative Y position above ground)
         if let player = player {
-            playerY = groundY + 15
+            let wasAboveGround = playerY > currentLayout.playerGroundY
+            let heightAboveGround = max(0, playerY - currentLayout.playerGroundY)
+            
+            player.position.x = currentLayout.playerX
+            
+            // If player was on ground, keep on ground; if jumping, maintain relative height
+            if wasAboveGround {
+                playerY = currentLayout.playerGroundY + heightAboveGround
+            } else {
+                playerY = currentLayout.playerGroundY
+            }
             player.position.y = playerY
         }
         
-        // Update UI positions (only if UI elements exist)
-        if let distanceLabel = distanceLabel {
-            distanceLabel.position = CGPoint(x: 100, y: size.height - 50)
+        // Update all UI elements with new layout
+        updateAllUIPositions()
+        
+        // Update existing obstacle positions to match new screen proportions
+        updateObstaclePositions()
+    }
+    
+    private func updateAllUIPositions() {
+        let margins = getSafeMargins()
+        
+        // Update distance label
+        if let label = distanceLabel {
+            label.fontSize = currentLayout.fontSize * layout.distanceFontSize
+            label.position = CGPoint(
+                x: size.width * layout.distanceLabelPosition.x + margins.side,
+                y: size.height * layout.distanceLabelPosition.y - margins.top
+            )
         }
-        if let highScoreLabel = highScoreLabel {
-            highScoreLabel.position = CGPoint(x: 100, y: size.height - 80)
+        
+        // Update high score label  
+        if let label = highScoreLabel {
+            label.fontSize = currentLayout.fontSize * layout.highScoreFontSize
+            label.position = CGPoint(
+                x: size.width * layout.highScoreLabelPosition.x + margins.side,
+                y: size.height * layout.highScoreLabelPosition.y - margins.top
+            )
         }
-        if let gameOverLabel = gameOverLabel {
-            gameOverLabel.position = CGPoint(x: size.width / 2, y: size.height / 2 + 50)
+        
+        // Update game over label
+        if let label = gameOverLabel {
+            label.fontSize = currentLayout.fontSize * layout.gameOverFontSize
+            label.position = CGPoint(
+                x: size.width * layout.gameOverLabelPosition.x,
+                y: size.height * layout.gameOverLabelPosition.y
+            )
         }
-        if let restartLabel = restartLabel {
-            restartLabel.position = CGPoint(x: size.width / 2, y: size.height / 2 - 20)
+        
+        // Update restart label
+        if let label = restartLabel {
+            label.fontSize = currentLayout.fontSize * layout.restartFontSize
+            label.position = CGPoint(
+                x: size.width * layout.restartLabelPosition.x,
+                y: size.height * layout.restartLabelPosition.y
+            )
         }
-        if let cooldownLabel = cooldownLabel {
-            cooldownLabel.position = CGPoint(x: size.width / 2, y: size.height / 2 - 50)
+        
+        // Update cooldown label
+        if let label = cooldownLabel {
+            label.fontSize = currentLayout.fontSize * layout.cooldownFontSize
+            label.position = CGPoint(
+                x: size.width * layout.cooldownLabelPosition.x,
+                y: size.height * layout.cooldownLabelPosition.y
+            )
+        }
+    }
+    
+    private func updateObstaclePositions() {
+        // Update visual obstacle nodes to match new ground position
+        for i in 0..<min(obstacles.count, obstacleNodes.count) {
+            let obstacle = obstacles[i]
+            let node = obstacleNodes[i]
+            
+            // Update Y position based on new ground level
+            let newY = obstacle.type == .rock ? currentLayout.groundY + layout.groundThickness/2 + 15 : currentLayout.groundY
+            node.position.y = newY
         }
     }
     
@@ -228,11 +403,12 @@ class GameScene: SKScene {
     private func startGame() {
         gameState = .playing
         distance = 0
-        frameDuration = GameConstants.initialFrameRate
         speedMultiplier = 1.0 // Reset speed multiplier
         playerVelocityY = 0
-        playerY = groundY + 15 // Align with ground
-        player.position.y = playerY
+        playerY = currentLayout.playerGroundY
+        if let player = player {
+            player.position = CGPoint(x: currentLayout.playerX, y: playerY)
+        }
         
         // Clear obstacles
         obstacles.removeAll()
@@ -262,12 +438,14 @@ class GameScene: SKScene {
         playerY += playerVelocityY * physicsScale
         
         // Ground collision
-        if playerY <= groundY + 15 {
-            playerY = groundY + 15
+        if playerY <= currentLayout.playerGroundY {
+            playerY = currentLayout.playerGroundY
             playerVelocityY = 0
         }
         
-        player.position.y = playerY
+        if let player = player {
+            player.position.y = playerY
+        }
         
         // Move obstacles
         moveObstacles()
@@ -278,10 +456,7 @@ class GameScene: SKScene {
         // Check collisions
         checkCollisions()
         
-        // Accelerate game
-        frameDuration *= GameConstants.accelerationFactor
-        // Cap frame rate at 60 FPS but allow speed multiplier to continue increasing
-        frameDuration = max(frameDuration, GameConstants.minFrameRate)
+        // Accelerate game speed
         speedMultiplier *= GameConstants.speedMultiplierIncrease
         
         updateUI()
@@ -329,7 +504,8 @@ class GameScene: SKScene {
                 
                 // Create visual node
                 let obstacleNode = createObstacleNode(type: obstacleType)
-                obstacleNode.position = CGPoint(x: spawnX, y: obstacleType == .rock ? groundY + 15 : groundY)
+                let yPosition = obstacleType == .rock ? currentLayout.groundY + layout.groundThickness/2 + 15 : currentLayout.groundY
+                obstacleNode.position = CGPoint(x: spawnX, y: yPosition)
                 obstacleNode.zPosition = 5
                 addChild(obstacleNode)
                 obstacleNodes.append(obstacleNode)
@@ -352,8 +528,12 @@ class GameScene: SKScene {
     }
     
     private func checkCollisions() {
-        let playerX = player.position.x
-        let playerBounds = CGRect(x: playerX - 15, y: playerY - 15, width: 30, height: 30)
+        let playerBounds = CGRect(
+            x: currentLayout.playerX - layout.playerSize.width/2, 
+            y: playerY - layout.playerSize.height/2, 
+            width: layout.playerSize.width, 
+            height: layout.playerSize.height
+        )
         
         for obstacle in obstacles {
             let obstacleX = obstacle.x
@@ -361,9 +541,9 @@ class GameScene: SKScene {
             
             switch obstacle.type {
             case .rock:
-                obstacleBounds = CGRect(x: obstacleX - 15, y: groundY, width: 30, height: 30)
+                obstacleBounds = CGRect(x: obstacleX - 15, y: currentLayout.groundY + layout.groundThickness/2, width: 30, height: 30)
             case .hole:
-                obstacleBounds = CGRect(x: obstacleX - 20, y: groundY - 10, width: 40, height: 20)
+                obstacleBounds = CGRect(x: obstacleX - 20, y: currentLayout.groundY - 10, width: 40, height: 20)
             }
             
             if playerBounds.intersects(obstacleBounds) {
@@ -377,12 +557,12 @@ class GameScene: SKScene {
         switch obstacle.type {
         case .hole:
             // Only collide if player is on ground
-            if playerY <= groundY + 20 {
+            if playerY <= currentLayout.playerGroundY + 20 {
                 gameOver()
             }
         case .rock:
             // Only collide if player is on ground
-            if playerY <= groundY + 20 {
+            if playerY <= currentLayout.playerGroundY + 20 {
                 gameOver()
             }
         }
@@ -426,10 +606,9 @@ class GameScene: SKScene {
     
     // MARK: - Obstacle Generation
     private func seedInitialObstacles() {
-        // Ensure guaranteed safe space in front of player (like in GopherDash)
-        let playerX: CGFloat = 100 // Player's X position
+        // Ensure guaranteed safe space in front of player
         let safeDistance: CGFloat = 300 // Guaranteed safe distance in front of player
-        let safeUntilX = playerX + safeDistance
+        let safeUntilX = currentLayout.playerX + safeDistance
         
         // Spawn obstacles beyond the safe zone
         for x in stride(from: safeUntilX + CGFloat(GameConstants.minGapCells), to: size.width + 400, by: CGFloat(GameConstants.minGapCells)) {
@@ -440,7 +619,8 @@ class GameScene: SKScene {
                 
                 // Create visual node
                 let obstacleNode = createObstacleNode(type: obstacleType)
-                obstacleNode.position = CGPoint(x: x, y: obstacleType == .rock ? groundY + 15 : groundY)
+                let yPosition = obstacleType == .rock ? currentLayout.groundY + layout.groundThickness/2 + 15 : currentLayout.groundY
+                obstacleNode.position = CGPoint(x: x, y: yPosition)
                 obstacleNode.zPosition = 5
                 addChild(obstacleNode)
                 obstacleNodes.append(obstacleNode)
@@ -480,7 +660,7 @@ class GameScene: SKScene {
         switch gameState {
         case .playing:
             // Only jump if on ground
-            if playerY <= groundY + 20 {
+            if playerY <= currentLayout.playerGroundY + 20 {
                 playerVelocityY = GameConstants.jumpVelocity // Jump up
             }
         case .gameOver:
@@ -500,7 +680,7 @@ class GameScene: SKScene {
         
         let deltaTime = currentTime - lastUpdateTime
         
-        if deltaTime >= frameDuration {
+        if deltaTime >= GameConstants.targetFrameRate {
             updateGame(currentTime: currentTime)
             lastUpdateTime = currentTime
         }

@@ -8,16 +8,15 @@ set -e  # Exit on any error
 echo "Building swiftdash iOS..."
 
 # Build the iOS app
-xcodebuild -project swiftdash.xcodeproj -scheme "swiftdash iOS" -configuration Debug build -destination 'platform=iOS Simulator,name=iPhone 15,OS=latest'
+xcodebuild -project swiftdash.xcodeproj -scheme "swiftdash iOS" -configuration Debug build -destination 'platform=iOS Simulator,name=iPhone 16,OS=latest'
 
 echo "Build completed successfully!"
 
 # Find the built app in DerivedData and copy it locally for easy access
 echo "Finding built app in DerivedData..."
-DERIVED_DATA_PATH="/Users/kfurman/Library/Developer/Xcode/DerivedData"
-APP_PATH=$(find "$DERIVED_DATA_PATH" -name "swiftdash.app" -path "*/Build/Products/Debug-iphonesimulator/*" 2>/dev/null | head -1)
+APP_PATH="/Users/kfurman/Library/Developer/Xcode/DerivedData/swiftdash-edxowmetpetrybdjmapxqygnppqa/Build/Products/Debug-iphonesimulator/swiftdash.app"
 
-if [ -z "$APP_PATH" ] || [ ! -d "$APP_PATH" ]; then
+if [ ! -d "$APP_PATH" ]; then
     echo "Error: Could not find swiftdash.app in DerivedData"
     echo "Build may have failed. Check the build output above."
     exit 1
@@ -39,11 +38,11 @@ SIMULATORS=$(xcrun simctl list devices available | grep "iPhone" | grep -v "unav
 echo "Available simulators:"
 echo "$SIMULATORS"
 
-# Use iPhone 15 if available, otherwise use the first available iPhone
-DEVICE_ID=$(xcrun simctl list devices available | grep "iPhone 15" | grep -v "unavailable" | head -1 | sed -E 's/.*\(([A-Z0-9-]+)\).*/\1/')
+# Use iPhone 16 if available, otherwise use the first available iPhone
+DEVICE_ID=$(xcrun simctl list devices available | grep "iPhone 16" | grep -v "unavailable" | head -1 | sed -E 's/.*\(([A-Z0-9-]+)\).*/\1/')
 
 if [ -z "$DEVICE_ID" ]; then
-    echo "iPhone 15 not found, using first available iPhone..."
+    echo "iPhone 16 not found, using first available iPhone..."
     DEVICE_ID=$(xcrun simctl list devices available | grep "iPhone" | grep -v "unavailable" | head -1 | sed -E 's/.*\(([A-Z0-9-]+)\).*/\1/')
 fi
 
