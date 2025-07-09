@@ -1,4 +1,4 @@
-# SwiftDash 🐹
+# SwiftDash 🐦‍⬛
 
 A Swift port of the terminal game GopherDash, built with SpriteKit for macOS and iOS.
 
