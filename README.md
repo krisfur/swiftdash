@@ -6,6 +6,11 @@ A Swift port of the terminal game GopherDash, built with SpriteKit for macOS and
 
 SwiftDash is an endless runner game where you control a hamster that runs right while the world scrolls left. Jump over rocks and holes to survive as long as possible and beat your high score! The game features a comprehensive menu system, customizable settings, and polished cross-platform gameplay.
 
+## Screencast
+
+![ios](screencast-ios.gif)
+![mac](screencast-mac.gif)
+
 ## Features
 
 ### Game Features
